@@ -23,15 +23,18 @@ Detailed, level-by-level breakdown with commands, screenshots, root cause, and r
 
 Recon starts with plain DNS. `dig flaws.cloud` returns eight A records instead of one — a strong signal the domain sits behind a highly-available AWS service, not a single server.
 
-![dig flaws.cloud](../images/01-dig-flaws-cloud.png)
+<img width="975" height="585" alt="flaws 1" src="https://github.com/user-attachments/assets/f0b20fdb-fdff-414b-b6f1-5e75d639fc24" />
+
 
 A reverse lookup on one of the IPs confirms it resolves through an **S3 static website hosting endpoint**:
 
-![nslookup S3 endpoint](../images/02-nslookup-s3-endpoint.png)
+<img width="743" height="134" alt="Flaws 2" src="https://github.com/user-attachments/assets/d0ae13f4-2182-481e-8940-8fb8d3803f51" />
+
 
 Browsing the resolved endpoint renders the challenge landing page — confirming public static website hosting is enabled:
 
-![flAWS welcome page](../images/03-welcome-page.png)
+<img width="1263" height="720" alt="Flaws 3" src="https://github.com/user-attachments/assets/1c4cf09a-71e8-452a-81e0-389d6ce7b3c3" />
+
 
 With the bucket name known, the full object listing can be pulled down **fully unauthenticated**:
 
@@ -39,11 +42,11 @@ With the bucket name known, the full object listing can be pulled down **fully u
 aws s3 ls s3://flaws.cloud/ --no-sign-request
 ```
 
-![aws s3 ls bucket listing](../images/04-s3-ls-bucket-listing.png)
+<img width="763" height="217" alt="Flaws 4" src="https://github.com/user-attachments/assets/65807203-3ef8-49b6-8f36-fe8692a53984" />
+
 
 The listing exposes `secret-dd02c7c.html` — a file never linked from the site's navigation. "Security by obscurity" fails the moment the bucket itself is listable:
 
-![secret file reveals level 2](../images/05-secret-file-level2-link.png)
 
 **Root cause:** the bucket policy/ACL grants `s3:ListBucket` and `s3:GetObject` to `Principal: *`. Public *list* access is the real problem — it makes every "hidden" object trivially discoverable.
 
@@ -62,11 +65,12 @@ Same pattern, second bucket. Listing is open again:
 aws s3 ls s3://level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud/
 ```
 
-![level 2 bucket listing](../images/06-level2-bucket-listing.png)
+<img width="763" height="217" alt="Flaws 4" src="https://github.com/user-attachments/assets/1de7b282-63a7-4c40-b9fc-be484355c793" />
 
 Fetching the disclosed secret file hands over the Level 3 target:
 
-![level 2 secret discloses level 3](../images/07-level2-secret-level3-link.png)
+<img width="1269" height="381" alt="Flaws 7 - Copy" src="https://github.com/user-attachments/assets/a72afd0e-5738-4b33-b0c7-c7be19741672" />
+
 
 **Fix:** identical to Level 1 — plus adopt an org-wide Service Control Policy (SCP) that denies public bucket ACLs by default, so the pattern can't be reintroduced bucket-by-bucket.
 
@@ -78,7 +82,8 @@ Fetching the disclosed secret file hands over the Level 3 target:
 
 First attempt: pull `.git` recursively over HTTP with `wget`. Fails — the web server doesn't serve the raw directory listing:
 
-![wget git attempt fails](../images/08-wget-git-attempt-fail.png)
+<img width="1270" height="400" alt="Flaws 08" src="https://github.com/user-attachments/assets/9202861f-0e05-4ec0-bfd7-5b78c390bfbe" />
+
 
 Pivot: Level 3 is *also* backed by S3, so the `.git` object database can be pulled directly out of the bucket instead of through the web server:
 
@@ -86,15 +91,17 @@ Pivot: Level 3 is *also* backed by S3, so the `.git` object database can be pull
 aws s3 sync s3://level3-9afd3927f195e10225021a578e6f78df.flaws.cloud/ ~/level3loot --no-sign-request
 ```
 
-![s3 sync pulling git objects](../images/09-s3-sync-git-objects.png)
+<img width="1260" height="660" alt="flaws 8" src="https://github.com/user-attachments/assets/dbaa16e3-ca7a-471e-a2da-00285747fbc4" />
+
 
 With a working local repo, `git log` shows two commits — the newest one titled **"Oops, accidentally added something I shouldn't have."** That's the tell:
 
-![git log](../images/10-git-log.png)
+<img width="986" height="298" alt="Flaws 9" src="https://github.com/user-attachments/assets/0e0479ca-65e3-455f-99f3-7dc14d948fa4" />
 
 `git diff` between the two commits recovers the deleted `access_keys.txt` in full — Git never actually removes history, it just stops tracking a file going forward:
 
-![git diff recovers AWS keys](../images/11-git-diff-access-keys.png)
+<img width="1275" height="577" alt="Flaws 10" src="https://github.com/user-attachments/assets/2e656245-7a53-449c-a5bf-d12b122e5160" />
+
 
 ```diff
 -access_key**************
@@ -108,8 +115,8 @@ aws configure --profile flawslevel3
 aws sts get-caller-identity --profile flawslevel3
 ```
 
-![aws configure profile](../images/12-aws-configure-profile.png)
-![sts get-caller-identity](../images/13-sts-get-caller-identity.png)
+<img width="1013" height="181" alt="Flaws 12" src="https://github.com/user-attachments/assets/989d9f18-4a9b-40fc-8ee3-a414c1532519" />
+
 
 Confirmed: `arn:aws:iam::975426262029:user/backup` — a live, working IAM identity, used for every subsequent level.
 
@@ -129,7 +136,8 @@ Confirmed: `arn:aws:iam::975426262029:user/backup` — a live, working IAM ident
 
 Level 4 is an EC2-hosted site behind HTTP Basic Auth — not something to brute-force:
 
-![level 4 login prompt](../images/14-level4-login-prompt.png)
+<img width="1261" height="680" alt="level 4 1" src="https://github.com/user-attachments/assets/fcb38685-7e2e-4c5f-94d4-a56d09ebd9fd" />
+
 
 Instead, using the credentials recovered in Level 3, the account's EBS snapshots are enumerated directly via the API. One is tagged `"flaws backup 2017.02.27"` — created right after the box was provisioned, exactly as the level's own hint suggests:
 
@@ -137,7 +145,8 @@ Instead, using the credentials recovered in Level 3, the account's EBS snapshots
 aws ec2 describe-snapshots --owner-id 975426262029 --profile flawslevel3
 ```
 
-![describe-snapshots](../images/15-describe-snapshots.png)
+
+<img width="1106" height="611" alt="level4 3" src="https://github.com/user-attachments/assets/edcaad75-3468-4063-ae00-c2874e0116e7" />
 
 A fresh, writable volume is restored from that snapshot into the assessor's own account — no owner interaction required beyond the snapshot being shared:
 
@@ -145,15 +154,16 @@ A fresh, writable volume is restored from that snapshot into the assessor's own 
 aws ec2 create-volume --availability-zone us-west-2a --snapshot-id snap-0b49342abd1bdcb89
 ```
 
-![create-volume](../images/16-create-volume.png)
+<img width="1155" height="351" alt="level4 4" src="https://github.com/user-attachments/assets/17719eb0-80e7-44b3-b708-88bacc063988" />
+
 
 The volume is attached to an EC2 instance, mounted, and browsed offline — a complete, forensic copy of the original disk:
 
-![mounted snapshot filesystem](../images/17-mounted-snapshot-ls.png)
+<img width="1267" height="697" alt="level 4 5" src="https://github.com/user-attachments/assets/db30f1db-a1fc-4a91-b789-f7d4d7cab5b5" />
+
 
 Inside `~/`, `setupNginx.sh` still contains the exact provisioning command — with the Basic Auth username/password in **plaintext**:
-
-![setupNginx.sh cleartext creds](../images/18-setupnginx-cleartext-creds.png)
+<img width="1069" height="686" alt="level 4 6" src="https://github.com/user-attachments/assets/7c5e6ff0-8eb3-4b96-9041-edef5bbba835" />
 
 ```bash
 htpasswd -b /etc/nginx/.htpasswd flaws nCP8xigdjpJyiXgJ7nJu7rw5Ro68iE8M
@@ -177,7 +187,8 @@ That credential unlocks the Level 4 login prompt.
 
 Authenticating into the Level 4 host with the recovered credentials leads straight into Level 5 — served through the Level 4 instance acting as a proxy into a separate resource:
 
-![level 5 reached via proxy pivot](../images/19-level5-reached.png)
+<img width="1270" height="397" alt="level 4 8" src="https://github.com/user-attachments/assets/0dcf3a5c-f997-4639-8a4a-e2ab418b434b" />
+
 
 **Root cause:** the Level 4 server proxies requests onward without validating the destination or the caller's authorization — a single compromised front-end host becomes a pivot point deeper into the environment.
 
